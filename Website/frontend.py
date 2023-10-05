@@ -2,6 +2,7 @@
 from reactpy import component, html, hooks, event, utils, run
 from reactpy.backend.starlette import configure, Starlette
 import pprint as pp
+import backend
 
 BOOTSTRAP_CSS = html.link(
     {
@@ -38,12 +39,6 @@ def FormStockTicker(t, set_t, id):
     )
 
 @component
-def SubmitButton(display_text, t1, t2, t3):
-    def handle_event(event):
-        print(f"Submitted Tickers {t1}, {t2}, {t3}")
-    return html.button({"on_click": handle_event}, display_text)
-
-@component
 def FormSubmitButton():
     return html.input(
         {
@@ -61,10 +56,8 @@ def Index():
 
     @event(prevent_default=True)
     def submit_tickers(event):
-        # Reset
-        set_t1('')
-        set_t2('')
-        set_t3('')
+        print(f"Submitted Tickers {t1}, {t2}, {t3}")
+        backend.submitTickers(t1, t2, t3)
 
     return html.div(
         BOOTSTRAP_CSS,
@@ -79,7 +72,7 @@ def Index():
                         FormStockTicker(t1, set_t1, 1),
                         FormStockTicker(t2, set_t2, 2),
                         FormStockTicker(t3, set_t3, 3),
-                        SubmitButton("Submit", t1, t2, t3)
+                        FormSubmitButton()
                     ),
                 ),
             ),
