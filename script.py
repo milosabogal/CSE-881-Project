@@ -299,10 +299,11 @@ def main():
     portfolio_optimizer.get_predictions()
     
     optimal_weights = portfolio_optimizer.get_optimal_weights() # Output
+    optimal_weights_percentages = np.round(optimal_weights*100, 2)
     print()
 
     for i in range(len(ticker_symbols)):
-        print(f"You should invest {optimal_weights[i] * investment_amount} ({optimal_weights[i]*100}%) in {ticker_symbols[i]}.")
+        print(f"You should invest {round(optimal_weights[i] * investment_amount, 2)} ({optimal_weights_percentages[i]}%) in {ticker_symbols[i]}.")
 
 if __name__ == "__main__":
     main()
