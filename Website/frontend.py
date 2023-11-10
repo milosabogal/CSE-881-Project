@@ -4,16 +4,8 @@ from reactpy.backend.flask import configure, Flask
 import pprint as pp
 import backend
 
-BOOTSTRAP_CSS = html.link(
-    {
-        'rel': 'stylesheet',
-        'href': 'https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/'
-                'dist/css/bootstrap.min.css',
-        'integrity': 'sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Y'
-                     'z1ztcQTwFspd3yD65VohhpuuCOmLASjC',
-        'crossorigin': 'anonymous',
-    }
-)
+with open("bootstrap.css") as f:
+    css = f.read()
 
 @component
 def FormStockTicker(t, set_t, id):
@@ -110,13 +102,13 @@ def Index():
         backend.submitTickers(t1, t2, t3, r, i)
 
     return html.article(
-        BOOTSTRAP_CSS,
+        html.style(css),
         html.div(
             {'class': 'container mt-3'},
             html.div(
                 {'class': 'row'},
                 html.div(
-                    {'class': 'col-lg-6'},
+                    {'class': 'col-lg-3'},
                     html.form(
                         {'on_submit': submit_tickers},
                         FormStockTicker(t1, set_t1, 1),
@@ -126,7 +118,7 @@ def Index():
                     ),
                 ),
                 html.div(
-                    {'class': 'col-lg-6'},
+                    {'class': 'col-lg-3'},
                     html.form(
                         {'on_submit': submit_tickers},
                         FormRiskTolerance(r, set_r),
