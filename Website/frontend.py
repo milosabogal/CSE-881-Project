@@ -1,6 +1,6 @@
 
 from reactpy import component, html, hooks, event, utils, run
-from reactpy.backend.starlette import configure, Starlette
+from reactpy.backend.flask import configure, Flask
 import pprint as pp
 import backend
 
@@ -31,9 +31,55 @@ def FormStockTicker(t, set_t, id):
                 'class': 'form-control',
                 'type': 'text',
                 'id': 'ticker',
-                'placeholder': 'enter ticker',
+                'placeholder': 'Enter Ticker',
                 'on_change': lambda event: set_t(event['target']['value']),
                 'value': t,
+            },
+        ),
+    )
+
+@component
+def FormRiskTolerance(r, set_t):
+    return html.div(
+        {'class': 'mb-3'},
+        html.label(
+            {
+                'class': 'form-label fw-bold',
+                'for': 'risk'
+            },
+            "Risk Tolerance",
+        ),
+        html.input(
+            {
+                'class': 'form-control',
+                'type': 'number',
+                'id': 'risk',
+                'placeholder': 'Enter Risk Tolerance',
+                'on_change': lambda event: set_t(event['target']['value']),
+                'value': r,
+            },
+        ),
+    )
+
+@component
+def FormInvestment(i, set_t):
+    return html.div(
+        {'class': 'mb-3'},
+        html.label(
+            {
+                'class': 'form-label fw-bold',
+                'for': 'invest'
+            },
+            "Investment",
+        ),
+        html.input(
+            {
+                'class': 'form-control',
+                'type': 'number',
+                'id': 'invest',
+                'placeholder': 'Enter Investment Amount',
+                'on_change': lambda event: set_t(event['target']['value']),
+                'value': i,
             },
         ),
     )
@@ -53,13 +99,17 @@ def Index():
     t1, set_t1 = hooks.use_state('')
     t2, set_t2 = hooks.use_state('')
     t3, set_t3 = hooks.use_state('')
+    r, set_r = hooks.use_state('')
+    i, set_i = hooks.use_state('')
 
     @event(prevent_default=True)
     def submit_tickers(event):
         print(f"Submitted Tickers {t1}, {t2}, {t3}")
-        backend.submitTickers(t1, t2, t3)
+        print(f"Risk Tolerance: {r}")
+        print(f"Investment: {i}")
+        backend.submitTickers(t1, t2, t3, r, i)
 
-    return html.div(
+    return html.article(
         BOOTSTRAP_CSS,
         html.div(
             {'class': 'container mt-3'},
@@ -75,8 +125,16 @@ def Index():
                         FormSubmitButton()
                     ),
                 ),
-            ),
-        ),
+                html.div(
+                    {'class': 'col-lg-6'},
+                    html.form(
+                        {'on_submit': submit_tickers},
+                        FormRiskTolerance(r, set_r),
+                        FormInvestment(i, set_i)
+                    ),
+                ),
+            ), 
+        )
     )
 
-run(Index, port=7000)
+run(Index, port=80)
