@@ -9,6 +9,8 @@ import numpy as np
 from sklearn.preprocessing import MinMaxScaler, StandardScaler, RobustScaler
 from sklearn.metrics import mean_squared_error
 
+import warnings
+
 import processing as ps
 
 START_DATE = "2021-01-01"

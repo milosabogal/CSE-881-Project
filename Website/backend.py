@@ -19,4 +19,3 @@ def submitTickers(t1, t2, t3, r, i):
 
     for i in range(len(tickers)):
         print(f"You should invest {round(optWeights[i] * investment, 2)} ({optimal_weights_percentages[i]}%) in {tickers[i]}.")
-

@@ -1,13 +1,6 @@
 import torch
-import torch.nn as nn
-import torch.optim as optim
-from torch.utils.data import TensorDataset, DataLoader
 
-import yfinance as yf
-
-import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 
 from cvxopt import matrix 
 from cvxopt import solvers
@@ -17,8 +10,6 @@ EMA_PERIOD = 20
 CCI_PERIOD = 20
 VOLATILITY_PERIOD = 20
 ROC_PERIOD = 20
-
-import warnings
 
 def returns(df):
     return (df["Close"] - df["Open"]) / df["Open"]
