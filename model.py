@@ -178,7 +178,8 @@ class PortfolioOptimizer:
         test_scaler = self.test_scalers[ticker_symbol]
         
         data = self.dataframes[ticker_symbol].to_numpy()
-        X_test, _ = ps.create_dataset(data[-(WINDOW_SIZE+1):], WINDOW_SIZE)
+        test_dataset = test_scaler.transform(data[-(WINDOW_SIZE+1):])
+        X_test, _ = ps.create_dataset(test_dataset, WINDOW_SIZE)
 
         model.eval()
         with torch.no_grad():
