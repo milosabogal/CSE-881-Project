@@ -21,7 +21,7 @@ TRAIN_PROPORTION = 0.9
 WINDOW_SIZE = 20
 HIDDEN_DIM = 64
 LR = 0.0005
-N_EPOCHS = 300
+N_EPOCHS = 20 # For quick iteration during prototype development
 BATCH_SIZE = 16
 
 class LSTM(nn.Module):
@@ -128,8 +128,6 @@ class PortfolioOptimizer:
             if print_progress:
                 print(f"Training for {ticker_symbol}")
             self.models[ticker_symbol] = self.train_model(ticker_symbol, print_progress)
-            if print_progress:
-                print()
     
     def train_model(self, ticker_symbol, print_progress):
         X_train = self.train_datasets[ticker_symbol]

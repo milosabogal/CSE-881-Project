@@ -111,20 +111,26 @@ def Index():
         print(f"Submitted Tickers {t1}, {t2}, {t3}")
         print(f"Risk Tolerance: {r}")
         print(f"Investment: {i}")
-        results = backend.submitTickers(t1, t2, t3, r, i)
+        
+        optWeights, optimal_weights_percentages, tickers, investment = backend.submitTickers(t1, t2, t3, r, i)
 
         # Create Raw results strings
-        res_raw1 = f"{results[2][0]} : {round(results[0][0] * results[3], 2)} ({results[1][0]}%)"
-        res_raw2 = f"{results[2][1]} : {round(results[0][1] * results[3], 2)} ({results[1][1]}%)"
-        res_raw3 = f"{results[2][2]} : {round(results[0][2] * results[3], 2)} ({results[1][2]}%)"
+        res_raw1 = f"You should invest ${optWeights[0] * investment:.2f} in {tickers[0].upper()}."
+        res_raw2 = f"You should invest ${optWeights[1] * investment:.2f} in {tickers[1].upper()}."
+        res_raw3 = f"You should invest ${optWeights[2] * investment:.2f} in {tickers[2].upper()}."
+        
         # Set Raw Results
         set_res1(res_raw1)
         set_res2(res_raw2)
         set_res3(res_raw3)
 
-        labels = [results[2][0], results[2][1], results[2][2]]
-        values = [results[1][0], results[1][1], results[1][2]]
-        plt.pie(values, labels=labels)
+        labels = [f"{tickers[i].upper():<4} = {optimal_weights_percentages[i]:.2f}%" for i in range(len(tickers))]
+
+        plt.clf()
+        plt.pie(optimal_weights_percentages, startangle=90)
+        plt.axis('equal')
+        plt.legend(labels, loc="best")
+        plt.title("Optimal Portfolio Allocation")
         buffer = BytesIO()
         plt.savefig(buffer, format='PNG')
         buffer.seek(0)
