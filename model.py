@@ -82,15 +82,23 @@ class PortfolioOptimizer:
         if feature_list == None: # Use all features
             feature_list = list(self.feature_functions)
         
-        for ticker_df in self.dataframes.values():
+        for ticker, ticker_df in self.dataframes.items():
+            
+            ticker_df.rename(columns={'Volume' : f"Volume {ticker}", 
+                                      'Open' : f"Open {ticker}", 
+                                      'High' : f"High {ticker}", 
+                                      'Low' : f"Low {ticker}", 
+                                      'Close' : f"Close {ticker}", 
+                                      'Adj Close' : f"Adj Close {ticker}"}, inplace=True)
+            
             for feature in feature_list:
                 feature_function = self.feature_functions[feature]
-                ticker_df[feature] = feature_function(ticker_df)
+                ticker_df[f"{feature} {ticker}"] = feature_function(ticker_df, ticker)
 
-            ticker_df.drop(["Open", "High", "Low", "Close", "Adj Close"], axis = 1, inplace=True)
+            # ticker_df.drop(["Open", "High", "Low", "Close", "Adj Close"], axis=1, inplace=True) # TODO: Should drop or keep these?
             ticker_df.dropna(inplace=True)
-            target = ticker_df.pop(target_feature)
-            ticker_df[target_feature] = target
+            target = ticker_df.pop(f"{target_feature} {ticker}")
+            ticker_df[f"{target_feature} {ticker}"] = target
 
     def preprocess(self):
         self.train_scalers = {}
@@ -187,6 +195,6 @@ class PortfolioOptimizer:
 
     def get_optimal_weights(self):
         predicted_returns = np.array(list(self.returns_predictions.values()))
-        historical_covariance_matrix = np.cov([ticker_df["Returns"] for ticker_df in self.dataframes.values()])
+        historical_covariance_matrix = np.cov([ticker_df[f"Returns {ticker}"] for ticker, ticker_df in self.dataframes.items()])
         weights = ps.markowitz_mean_variance(predicted_returns, historical_covariance_matrix, self.risk_tolerance)
         return weights

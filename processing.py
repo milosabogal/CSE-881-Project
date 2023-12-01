@@ -11,36 +11,35 @@ CCI_PERIOD = 20
 VOLATILITY_PERIOD = 20
 ROC_PERIOD = 20
 
-def returns(df):
-    return (df["Close"] - df["Open"]) / df["Open"]
+def returns(df, ticker):
+    return (df[f"Close {ticker}"] - df[f"Open {ticker}"]) / df[f"Open {ticker}"]
 
-def log_returns(df):
-    return np.log(df["Close"]).diff()
+def log_returns(df, ticker):
+    return np.log(df[f"Close {ticker}"]).diff()
 
-def sma(df):
-    return df["Close"].rolling(window=SMA_PERIOD).mean()
+def sma(df, ticker):
+    return df[f"Close {ticker}"].rolling(window=SMA_PERIOD).mean()
 
-def ema(df):
-    return df["Close"].ewm(span=EMA_PERIOD, adjust=False).mean()
+def ema(df, ticker):
+    return df[f"Close {ticker}"].ewm(span=EMA_PERIOD, adjust=False).mean()
 
-def vwap(df):
-    value = df["Close"] * df["Volume"]
+def vwap(df, ticker):
+    value = df[f"Close {ticker}"] * df[f"Volume {ticker}"]
     cumulative_value = value.cumsum()
-    cumulative_volume = df["Volume"].cumsum()
+    cumulative_volume = df[f"Volume {ticker}"].cumsum()
     return cumulative_value / cumulative_volume
 
-def cci(df):
-    typical_price = (df["High"] + df["Low"] + df["Close"]) / 3
+def cci(df, ticker):
+    typical_price = (df[f"High {ticker}"] + df[f"Low {ticker}"] + df[f"Close {ticker}"]) / 3
     mean_typical_price = typical_price.rolling(window=CCI_PERIOD).mean()
     mean_deviation = (typical_price - mean_typical_price).abs().rolling(window=CCI_PERIOD).mean()
     return (typical_price - mean_typical_price) / (0.015 * mean_deviation)
 
-def volatility(df):
-    return df["Returns"].rolling(window=VOLATILITY_PERIOD).std()
+def volatility(df, ticker):
+    return df[f"Returns {ticker}"].rolling(window=VOLATILITY_PERIOD).std()
 
-def roc(df):
-    return (df["Close"] / df["Close"].shift(ROC_PERIOD) - 1) * 100
-
+def roc(df, ticker):
+    return (df[f"Close {ticker}"] / df[f"Close {ticker}"].shift(ROC_PERIOD) - 1) * 100
 
 def create_dataset(dataset, window_size):
     X, y = [], []
@@ -81,3 +80,34 @@ def markowitz_mean_variance(returns, covariance_matrix, risk_tolerance=0):
     sol = solvers.qp(P, q, G, h, A, b)
     
     return np.array(sol["x"]).squeeze()
+
+def realized_profit(investment_amount, weights, returns):
+    """Computes the profit of an investment given the weigths and returns.
+
+    Args:
+        investment_amount: Total investment amount
+        weights: Weights corresponding to each ticker
+        returns: Realized returns of each ticker
+
+    Returns:
+        Realized profit of the investment
+    """
+    return investment_amount * np.dot(weights, returns)
+
+
+class BlockingTimeSeriesSplit():
+    def __init__(self, n_splits, test_size = 0.9):
+        self.n_splits = n_splits
+        self.test_size = test_size
+    
+    def split(self, X):
+        n_samples = len(X)
+        k_fold_size = n_samples // self.n_splits
+        indices = np.arange(n_samples)
+
+        margin = 0
+        for i in range(self.n_splits):
+            start = i * k_fold_size
+            stop = start + k_fold_size
+            mid = int(self.test_size * (stop - start)) + start
+            yield indices[start: mid], indices[mid + margin: stop]
