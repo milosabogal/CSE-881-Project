@@ -41,13 +41,21 @@ def volatility(df, ticker):
 def roc(df, ticker):
     return (df[f"Close {ticker}"] / df[f"Close {ticker}"].shift(ROC_PERIOD) - 1) * 100
 
-def create_dataset(dataset, window_size):
+def create_regression_dataset(dataset, window_size):
     X, y = [], []
     for i in range(len(dataset)-window_size):
         features, target = dataset[i:i+window_size], dataset[i+window_size, -1]
         X.append(features)
         y.append(target)
-    return torch.tensor(np.array(X)).float(), torch.tensor(np.array(y)).float().reshape(-1,1)
+    return torch.tensor(np.array(X), dtype=torch.float), torch.tensor(np.array(y), dtype=torch.float).reshape(-1,1)
+
+def create_classification_dataset(dataset, window_size):
+    X, y = [], []
+    for i in range(len(dataset)-window_size):
+        features, target = dataset[i:i+window_size, :-1], dataset[i+window_size, -1]
+        X.append(features)
+        y.append(target)
+    return torch.tensor(np.array(X), dtype=torch.float), torch.tensor(np.array(y), dtype=torch.long)
 
 def markowitz_mean_variance(returns, covariance_matrix, risk_tolerance=0):
     """ Compute the optimal weights using the Markowitz mean-variance model.
@@ -63,6 +71,7 @@ def markowitz_mean_variance(returns, covariance_matrix, risk_tolerance=0):
     Returns:
         The optimal weights
     """
+    solvers.options["show_progress"] = False
     P = covariance_matrix
     q = -risk_tolerance * returns
     G = -np.eye(len(returns))
@@ -81,33 +90,20 @@ def markowitz_mean_variance(returns, covariance_matrix, risk_tolerance=0):
     
     return np.array(sol["x"]).squeeze()
 
-def realized_profit(investment_amount, weights, returns):
-    """Computes the profit of an investment given the weigths and returns.
-
-    Args:
-        investment_amount: Total investment amount
-        weights: Weights corresponding to each ticker
-        returns: Realized returns of each ticker
-
-    Returns:
-        Realized profit of the investment
-    """
-    return investment_amount * np.dot(weights, returns)
-
-
+# Adapted from https://goldinlocks.github.io/Time-Series-Cross-Validation/
 class BlockingTimeSeriesSplit():
-    def __init__(self, n_splits, test_size = 0.9):
+    def __init__(self, n_splits, train_size):
         self.n_splits = n_splits
-        self.test_size = test_size
+        self.train_size = train_size
     
-    def split(self, X):
+    def split(self, X, window_size):
         n_samples = len(X)
         k_fold_size = n_samples // self.n_splits
         indices = np.arange(n_samples)
 
-        margin = 0
+        margin = -window_size
         for i in range(self.n_splits):
             start = i * k_fold_size
             stop = start + k_fold_size
-            mid = int(self.test_size * (stop - start)) + start
+            mid = int(self.train_size * (stop - start)) + start
             yield indices[start: mid], indices[mid + margin: stop]

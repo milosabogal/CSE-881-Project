@@ -6,10 +6,8 @@ from torch.utils.data import TensorDataset, DataLoader
 import yfinance as yf
 import numpy as np
 
-from sklearn.preprocessing import MinMaxScaler, StandardScaler, RobustScaler
+from sklearn.preprocessing import RobustScaler
 from sklearn.metrics import mean_squared_error
-
-import warnings
 
 import processing as ps
 
@@ -18,9 +16,9 @@ END_DATE = "2024-01-01"
 
 TRAIN_PROPORTION = 0.9
 
-WINDOW_SIZE = 20
+WINDOW_SIZE = 3
 HIDDEN_DIM = 64
-LR = 0.0005
+LR = 0.0001
 N_EPOCHS = 20 # For quick iteration during prototype development
 BATCH_SIZE = 16
 
@@ -120,8 +118,8 @@ class PortfolioOptimizer:
             test_scaler = RobustScaler()
             test_dataset = test_scaler.fit_transform(test) 
 
-            X_train, y_train = ps.create_dataset(train_dataset, window_size=WINDOW_SIZE)
-            X_test, y_test = ps.create_dataset(test_dataset, window_size=WINDOW_SIZE)
+            X_train, y_train = ps.create_regression_dataset(train_dataset, window_size=WINDOW_SIZE)
+            X_test, y_test = ps.create_regression_dataset(test_dataset, window_size=WINDOW_SIZE)
 
             self.train_datasets[ticker_symbol] = X_train
             self.train_labels[ticker_symbol] = y_train
@@ -154,7 +152,7 @@ class PortfolioOptimizer:
             model.train()
             for X_batch, y_batch in loader:
                 y_pred = model(X_batch)
-                loss = loss_fn(y_pred, y_batch.reshape(-1,1))
+                loss = loss_fn(y_pred, y_batch)
                 optimizer.zero_grad()
                 loss.backward()
                 optimizer.step()
@@ -185,7 +183,7 @@ class PortfolioOptimizer:
         
         data = self.dataframes[ticker_symbol].to_numpy()
         test_dataset = test_scaler.transform(data[-(WINDOW_SIZE+1):])
-        X_test, _ = ps.create_dataset(test_dataset, WINDOW_SIZE)
+        X_test, _ = ps.create_regression_dataset(test_dataset, WINDOW_SIZE)
 
         model.eval()
         with torch.no_grad():
