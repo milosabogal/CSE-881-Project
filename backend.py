@@ -5,7 +5,8 @@ def submitTickers(t1, t2, t3, r, i):
     investment = float(i)
     risk_tol = float(r)
     tickers = [t1, t2, t3]
-    pOpt = model.PortfolioOptimizer(tickers, risk_tol)
+    tickers_sanitized = [t.upper() for t in tickers]
+    pOpt = model.PortfolioOptimizer(tickers_sanitized, risk_tol)
 
     pOpt.get_data()
     pOpt.construct_features()
