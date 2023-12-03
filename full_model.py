@@ -32,7 +32,7 @@ WINDOW_SIZE_VALUES = [3, 5, 10]
 BATCH_SIZE_VALUES = [32, 64]
 HIDDEN_SIZE_VALUES = [32, 64, 128]
 LEARNING_RATE_VALUES = [0.1, 0.01, 0.001, 0.0001]
-EPOCH_VALUES = [100, 400, 700]
+EPOCH_VALUES = [400, 700]
 
 
 class LSTM(nn.Module):
@@ -165,11 +165,15 @@ class PortfolioOptimizer:
         params_list = list(product(WINDOW_SIZE_VALUES, BATCH_SIZE_VALUES, HIDDEN_SIZE_VALUES,
                                    LEARNING_RATE_VALUES, EPOCH_VALUES))
 
-        results = Parallel(n_jobs=-1, verbose=6)(delayed(evaluate_params)(params) for params in params_list)
+        results = Parallel(n_jobs=-1, verbose=10)(delayed(evaluate_params)(params) for params in params_list)
 
-        best_error, best_params = min(results, key=lambda x: x[0])
+        f = min if self.method == "regression" else max
+        best_error, best_params = f(results, key=lambda x: x[0])
         print("\nBest parameters: ws = {}, batch size = {}, hid = {}, lr = {}, epochs = {}".format(*best_params))
-        print("Lowest average error:", best_error, "\n")
+        if self.method == "regression":
+            print("Lowest average error:", best_error, "\n")
+        else:
+            print("Highest average accuracy:", best_error, "\n")
         return best_params
 
     def train_and_test(self, train, test, window_size, batch_size, hidden_dim, learning_rate, num_epochs,
@@ -287,11 +291,13 @@ class PortfolioOptimizer:
                 if final_predictions:
                     self.regression_predictions[ticker_symbol] = y_pred_orig
 
+                return test_error, model
+
             elif self.method == "classification":
                 test_error = loss_fn(y_pred, y_test).item()
+                y_pred_labels = torch.argmax(y_pred, dim=1)
+                accuracy = accuracy_score(y_test.cpu().numpy(), y_pred_labels.cpu().numpy())
                 if display_metrics:
-                    y_pred_labels = torch.argmax(y_pred, dim=1)
-                    accuracy = accuracy_score(y_test.cpu().numpy(), y_pred_labels.cpu().numpy())
                     print("Test Cross Entropy Loss:", test_error)
                     print("Testing accuracy:", accuracy)
                     print(confusion_matrix(y_test.cpu().numpy(), y_pred_labels.cpu().numpy()))
@@ -300,8 +306,8 @@ class PortfolioOptimizer:
                 if final_predictions:
                     pred_probabilities = torch.softmax(y_pred, dim=1).cpu().numpy()
                     self.classification_predictions = pred_probabilities
-
-            return test_error, model
+                
+                return accuracy, model
 
     def train_regression(self):
         for ticker_symbol in self.ticker_symbols:
