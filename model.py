@@ -16,11 +16,11 @@ END_DATE = "2024-01-01"
 
 TRAIN_PROPORTION = 0.9
 
-WINDOW_SIZE = 3
-HIDDEN_DIM = 64
+WINDOW_SIZE = 5
+HIDDEN_DIM = 32
 LR = 0.0001
-N_EPOCHS = 20 # For quick iteration during prototype development
-BATCH_SIZE = 16
+N_EPOCHS = 400
+BATCH_SIZE = 64
 
 class LSTM(nn.Module):
     def __init__(self, input_dim, hidden_dim, num_layers, output_dim):
@@ -93,14 +93,12 @@ class PortfolioOptimizer:
                 feature_function = self.feature_functions[feature]
                 ticker_df[f"{feature} {ticker}"] = feature_function(ticker_df, ticker)
 
-            # ticker_df.drop(["Open", "High", "Low", "Close", "Adj Close"], axis=1, inplace=True) # TODO: Should drop or keep these?
             ticker_df.dropna(inplace=True)
             target = ticker_df.pop(f"{target_feature} {ticker}")
             ticker_df[f"{target_feature} {ticker}"] = target
 
     def preprocess(self):
         self.train_scalers = {}
-        self.test_scalers = {}
         self.train_datasets = {}
         self.train_labels = {}
         self.test_datasets = {}
@@ -114,9 +112,7 @@ class PortfolioOptimizer:
 
             train_scaler = RobustScaler()
             train_dataset = train_scaler.fit_transform(train) 
-
-            test_scaler = RobustScaler()
-            test_dataset = test_scaler.fit_transform(test) 
+            test_dataset = train_scaler.transform(test) 
 
             X_train, y_train = ps.create_regression_dataset(train_dataset, window_size=WINDOW_SIZE)
             X_test, y_test = ps.create_regression_dataset(test_dataset, window_size=WINDOW_SIZE)
@@ -126,7 +122,6 @@ class PortfolioOptimizer:
             self.test_datasets[ticker_symbol] = X_test
             self.test_labels[ticker_symbol] = y_test
             self.train_scalers[ticker_symbol] = train_scaler
-            self.test_scalers[ticker_symbol] = test_scaler
 
     def train_models(self, method=None, print_progress=False):
         self.models = {}
@@ -179,20 +174,20 @@ class PortfolioOptimizer:
 
     def get_prediction(self, ticker_symbol):
         model = self.models[ticker_symbol]
-        test_scaler = self.test_scalers[ticker_symbol]
+        scaler = self.train_scalers[ticker_symbol]
         
         data = self.dataframes[ticker_symbol].to_numpy()
-        test_dataset = test_scaler.transform(data[-(WINDOW_SIZE+1):])
+        test_dataset = scaler.transform(data[-(WINDOW_SIZE+1):])
         X_test, _ = ps.create_regression_dataset(test_dataset, WINDOW_SIZE)
 
         model.eval()
         with torch.no_grad():
             y_pred = model(X_test)
-            y_pred_orig = test_scaler.inverse_transform(np.repeat(y_pred, X_test.shape[2], axis=-1))[:,-1]
+            y_pred_orig = scaler.inverse_transform(np.repeat(y_pred, X_test.shape[2], axis=-1))[:,-1]
             return y_pred_orig
 
     def get_optimal_weights(self):
         predicted_returns = np.array(list(self.returns_predictions.values()))
-        historical_covariance_matrix = np.cov([ticker_df[f"Returns {ticker}"] for ticker, ticker_df in self.dataframes.items()])
+        historical_covariance_matrix = np.cov([ticker_df[f"Returns {ticker}"].iloc[:int(TRAIN_PROPORTION * len(ticker_df))] for ticker, ticker_df in self.dataframes.items()])
         weights = ps.markowitz_mean_variance(predicted_returns, historical_covariance_matrix, self.risk_tolerance)
         return weights

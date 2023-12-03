@@ -1,4 +1,3 @@
-
 from reactpy import component, html, use_state, event, run, widgets, use_effect
 from reactpy.backend.flask import configure, Flask
 from io import BytesIO
