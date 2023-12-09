@@ -1,11 +1,14 @@
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import seaborn as sns
 
 import torch
 import torch.nn as nn
 import torch.optim as optim
 from torch.utils.data import TensorDataset, DataLoader
+
+import xgboost as xgb
 
 import yfinance as yf
 
@@ -14,6 +17,7 @@ from sklearn.metrics import mean_squared_error
 from sklearn.metrics import accuracy_score
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import classification_report
+from sklearn.model_selection import GridSearchCV
 
 from joblib import Parallel, delayed
 
@@ -31,7 +35,7 @@ RANDOM_ITERATIONS = 50
 WINDOW_SIZE_VALUES = [3, 5, 10]
 BATCH_SIZE_VALUES = [32, 64]
 HIDDEN_SIZE_VALUES = [32, 64, 128]
-LEARNING_RATE_VALUES = [0.1, 0.01, 0.001, 0.0001]
+LEARNING_RATE_VALUES = [0.01, 0.001, 0.0001]
 EPOCH_VALUES = [400, 700]
 
 
@@ -91,6 +95,7 @@ class PortfolioOptimizer:
 
         self.best_regression_models = {}
         self.regression_predictions = {}
+        self.xgboost_predictions = {}
 
         self.best_classification_model = None
         self.classification_predictions = None
@@ -104,7 +109,7 @@ class PortfolioOptimizer:
     def print_data_summary(self):
         example_df = self.dataframes[self.ticker_symbols[0]]
         total_num_days = example_df.shape[0]
-        num_features = example_df.shape[1] - 1
+        num_features = example_df.shape[1]
         print(f"Number of samples: {total_num_days}")
         print(f"Number of features: {num_features}")
 
@@ -130,6 +135,9 @@ class PortfolioOptimizer:
         self.historical_covariance_matrix = np.cov(
             [ticker_df[f"Returns {ticker}"].iloc[:int(self.train_size * len(ticker_df))]
              for ticker, ticker_df in self.dataframes.items()])
+        
+        self.full_df = pd.concat(self.dataframes.values(), axis=1)
+        self.full_df["Label"] = np.argmax(self.full_df[[f"Returns {ticker}" for ticker in self.ticker_symbols]].values, axis=1)
 
         print("\nAfter preprocessing:")
         self.print_data_summary()
@@ -296,12 +304,20 @@ class PortfolioOptimizer:
             elif self.method == "classification":
                 test_error = loss_fn(y_pred, y_test).item()
                 y_pred_labels = torch.argmax(y_pred, dim=1)
-                accuracy = accuracy_score(y_test.cpu().numpy(), y_pred_labels.cpu().numpy())
+                y_pred_labels_numpy = y_pred_labels.cpu().numpy()
+                y_test_numpy = y_test.cpu().numpy()
+                accuracy = accuracy_score(y_test_numpy, y_pred_labels_numpy)
                 if display_metrics:
                     print("Test Cross Entropy Loss:", test_error)
                     print("Testing accuracy:", accuracy)
-                    print(confusion_matrix(y_test.cpu().numpy(), y_pred_labels.cpu().numpy()))
-                    print(classification_report(y_test.cpu().numpy(), y_pred_labels.cpu().numpy()))
+                    cm = confusion_matrix(y_test_numpy, y_pred_labels_numpy)
+                    print(cm)
+                    print(classification_report(y_test_numpy, y_pred_labels_numpy))
+                    plt.figure(figsize=(8, 6))
+                    sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=self.ticker_symbols, yticklabels=self.ticker_symbols)
+                    plt.xlabel('Predicted')
+                    plt.ylabel('True')
+                    plt.title('Confusion Matrix')
 
                 if final_predictions:
                     pred_probabilities = torch.softmax(y_pred, dim=1).cpu().numpy()
@@ -327,9 +343,7 @@ class PortfolioOptimizer:
                                                                              final_predictions=True)[1]
 
     def train_classification(self):
-        full_df = pd.concat(self.dataframes.values(), axis=1)
-        full_df["Label"] = np.argmax(full_df[[f"Returns {ticker}" for ticker in self.ticker_symbols]].values, axis=1)
-        X = full_df.to_numpy()
+        X = self.full_df.to_numpy()
         train_size = int(self.train_size * X.shape[0])
         X_validation = X[:train_size]
 
@@ -340,48 +354,101 @@ class PortfolioOptimizer:
                                                              learning_rate, num_epochs, print_progress=False,
                                                              display_metrics=True, final_predictions=True)[1]
 
+    def train_xgboost(self, window_size=3):
+        for ticker_symbol in self.ticker_symbols:
+            ticker_df = self.dataframes[ticker_symbol]
+            X = ticker_df.to_numpy()
+            
+            train_size = int(self.train_size * X.shape[0])
+            train, test = X[:train_size], X[train_size - window_size:]
+           
+            scaler = RobustScaler()
+            train_scaled = scaler.fit_transform(train)
+            test_scaled = scaler.transform(test)
+
+            X_train, y_train = ps.create_regression_dataset(train_scaled, window_size=window_size)
+            X_test, y_test = ps.create_regression_dataset(test_scaled, window_size=window_size)
+
+            xgb_model = xgb.XGBRegressor(objective='reg:squarederror')
+            param_grid = {
+                'learning_rate': [0.01, 0.1, 0.2],
+                'max_depth': [3, 5, 7],
+                'n_estimators': [50, 100, 200]
+            }
+
+            model = GridSearchCV(estimator=xgb_model, param_grid=param_grid, scoring='neg_mean_squared_error', cv=3)
+            model.fit(X_train.reshape(X_train.shape[0], -1), y_train)
+
+            y_pred = model.predict(X_test.reshape(X_test.shape[0], -1)).reshape(-1,1)
+
+            y_pred_orig = scaler.inverse_transform(np.repeat(y_pred, X_test.shape[2], axis=-1))[:,-1]
+            y_test_orig = scaler.inverse_transform(np.repeat(y_test, X_test.shape[2], axis=-1))[:,-1]
+
+            mse = mean_squared_error(y_pred_orig, y_test_orig)
+            plt.figure(figsize=(16, 4))
+            plt.plot(y_test_orig, 'o-k', label="actual")
+            plt.plot(y_pred_orig, 'o-r', label="predicted")
+            plt.xlabel("Time (days)")
+            plt.ylabel("Returns")
+            plt.legend()
+            plt.title(f'{ticker_symbol} (XGBOOST) Test RMSE = ' + str(mse))
+
+            self.xgboost_predictions[ticker_symbol] = y_pred_orig
+
     def train(self):
         torch.manual_seed(0)
         np.random.seed(0)
 
-        if self.method == "equal" or self.method == "random":
-            return
-
-        elif self.method == "regression":
+        if self.method == "regression":
             self.train_regression()
 
         elif self.method == "classification":
             self.train_classification()
 
+        elif self.method == "xgboost":
+            self.train_xgboost()
+
         else:
-            raise ValueError("Invalid method")
+            return
 
     def get_weights(self, day=-1):
         if self.method == "equal":
-            return np.ones(len(self.ticker_symbols)) / len(self.ticker_symbols)
+            weights = np.ones(len(self.ticker_symbols)) / len(self.ticker_symbols)
 
         elif self.method == "regression":
             predicted_returns = np.array([self.regression_predictions[ticker][day] for ticker in self.ticker_symbols])
             weights = ps.markowitz_mean_variance(predicted_returns, self.historical_covariance_matrix,
                                                  self.risk_tolerance)
-            return weights
 
         elif self.method == "classification":
             weights = self.classification_predictions[day]
             if self.greedy_classification:
                 weights = np.eye(len(self.ticker_symbols))[np.argmax(weights)]
-            return weights
 
         elif self.method == "random":
             random_numbers = np.random.rand(len(self.ticker_symbols))
-            return random_numbers / np.sum(random_numbers)
+            weights = random_numbers / np.sum(random_numbers)
+        
+        elif self.method == "cheat classification":
+            returns = self.full_df[[f"Returns {ticker}" for ticker in self.ticker_symbols]].iloc[day]
+            weights = np.eye(len(self.ticker_symbols))[np.argmax(returns)]
 
-        else:
-            raise ValueError("Invalid method")
+        elif self.method == "cheat regression":
+            returns = self.full_df[[f"Returns {ticker}" for ticker in self.ticker_symbols]].iloc[day]
+            weights = ps.markowitz_mean_variance(returns, self.historical_covariance_matrix,
+                                                 self.risk_tolerance)
+
+        elif self.method == "xgboost":
+            weights = np.array([self.xgboost_predictions[ticker][day] for ticker in self.ticker_symbols])
+            weights = ps.markowitz_mean_variance(weights, self.historical_covariance_matrix,
+                                                 self.risk_tolerance)
+
+        return weights
 
     def get_portfolio_returns(self):
         portfolio_returns_list = np.zeros(self.num_testing_days)
-        for i in range(-self.num_testing_days + 1, 0):
+        weights_list = np.zeros((self.num_testing_days, len(self.ticker_symbols)))
+        for i in range(-self.num_testing_days, 0):
             true_returns = []
             for ticker, ticker_df in self.dataframes.items():
                 ticker_returns = ticker_df[f"Returns {ticker}"].iloc[i]
@@ -389,24 +456,105 @@ class PortfolioOptimizer:
 
             true_returns = np.array(true_returns)
             weights = self.get_weights(day=i)
+            weights_list[i] = weights
             current_portfolio_returns = np.dot(weights, true_returns)
             portfolio_returns_list[i] = current_portfolio_returns
 
-        return portfolio_returns_list
+        return portfolio_returns_list, weights_list
 
     def plot_portfolio_performance(self):
-        if self.method == "random":
+        if self.method == "random": 
             portfolio_returns_list = np.zeros(self.num_testing_days)
             for _ in range(RANDOM_ITERATIONS):
-                portfolio_returns_list += self.get_portfolio_returns()
+                portfolio_returns_list += self.get_portfolio_returns()[0]
             portfolio_returns_list = portfolio_returns_list / RANDOM_ITERATIONS
-
+            self._plot_results(portfolio_returns_list)
+        
         else:
-            portfolio_returns_list = self.get_portfolio_returns()
+            portfolio_returns_list, weights_list = self.get_portfolio_returns()
+            self._plot_results(portfolio_returns_list, weights_list)
 
-        self._plot_results(portfolio_returns_list)
+    def plot_multiple_random_portfolio_performance(self, reps):
+        # Plot multiple regression portfolio performance for different risk tolerances
+        portfolio_returns_list = np.zeros((reps, self.num_testing_days))
+        plt.figure(figsize=(16, 4))
+        plt.suptitle(f"Random Portfolio Allocation")
+        ax1 = plt.subplot(1, 2, 1)
+        for i in range(reps):
+            portfolio_returns_list[i] = self.get_portfolio_returns()[0]
+            portfolio_returns_percentages = 100 * portfolio_returns_list[i]
+            mu = portfolio_returns_percentages.mean()
+            sigma = portfolio_returns_percentages.std(ddof=1)
+            ax1.plot(portfolio_returns_percentages)
+        # plot average
+        mu = (100*portfolio_returns_list).mean(axis=0).mean()
+        sigma = (100*portfolio_returns_list).mean(axis=0).std(ddof=1)
+        ax1.plot(100 * portfolio_returns_list.mean(axis=0), label=f"Average: $\\mu = {mu:.2f}$, $\\sigma = {sigma:.2f}$")
+        ax1.set_xlabel("Day")
+        ax1.set_ylabel("Daily Portfolio Returns (in %)")
+        ax1.legend(framealpha=0.4)
+        ax1.set_title("Daily Portfolio Returns")
 
-    def _plot_results(self, portfolio_returns_list):
+        ax2 = plt.subplot(1, 2, 2)
+        for i in range(reps):
+            cumulative_portfolio_returns = np.cumprod(1 + portfolio_returns_list[i]) - 1
+            ax2.plot(100 * cumulative_portfolio_returns)
+        # plot average
+        ax2.plot((100 * (np.cumprod(1 + portfolio_returns_list, axis=1) - 1)).mean(axis=0), label=f"Average")
+        ax2.set_ylabel('Cumulative Portfolio Returns (in %)')
+        secondary_axis = ax2.secondary_yaxis('right',
+                                             functions=(lambda x: self.DEFAULT_DAILY_INVESTMENT_AMOUNT * (x / 100 + 1),
+                                                        lambda x: 100 * (x / self.DEFAULT_DAILY_INVESTMENT_AMOUNT - 1)))
+        secondary_axis.set_ylabel('Capital (in USD)')
+        plt.xlabel
+        plt.legend()
+        plt.title("Cumulative Portfolio Performance")
+
+        plt.tight_layout()
+
+    def plot_multiple_regression_portfolio_performance(self, risk_tolerances):
+        # Plot multiple regression portfolio performance for different risk tolerances
+        portfolio_returns_list = np.zeros((len(risk_tolerances), self.num_testing_days))
+        plt.figure(figsize=(16, 4))
+        plt.suptitle(f"LSTM Regression + Markowitz Mean-Variance Model for Different Risk Tolerances ($\\lambda$)")
+        ax1 = plt.subplot(1, 2, 1)
+        for i, risk_tolerance in enumerate(risk_tolerances):
+            self.set_risk_tolerance(risk_tolerance)
+            portfolio_returns_list[i] = self.get_portfolio_returns()[0]
+            portfolio_returns_percentages = 100 * portfolio_returns_list[i]
+            mu = portfolio_returns_percentages.mean()
+            sigma = portfolio_returns_percentages.std(ddof=1)
+            ax1.plot(portfolio_returns_percentages, label=f"$\\lambda = {risk_tolerance}$, $\\mu = {mu:.2f}$, $\\sigma = {sigma:.2f}$")
+        ax1.set_xlabel("Day")
+        ax1.set_ylabel("Daily Portfolio Returns (in %)")
+        ax1.legend(framealpha=0.4)
+        ax1.set_title("Daily Portfolio Returns")
+
+        ax2 = plt.subplot(1, 2, 2)
+        for i, risk_tolerance in enumerate(risk_tolerances):
+            cumulative_portfolio_returns = np.cumprod(1 + portfolio_returns_list[i]) - 1
+            ax2.plot(100 * cumulative_portfolio_returns, label=f"$\\lambda = {risk_tolerance}$")
+        ax2.set_ylabel('Cumulative Portfolio Returns (in %)')
+        secondary_axis = ax2.secondary_yaxis('right',
+                                             functions=(lambda x: self.DEFAULT_DAILY_INVESTMENT_AMOUNT * (x / 100 + 1),
+                                                        lambda x: 100 * (x / self.DEFAULT_DAILY_INVESTMENT_AMOUNT - 1)))
+        secondary_axis.set_ylabel('Capital (in USD)')
+        plt.xlabel
+        plt.legend()
+        plt.title("Cumulative Portfolio Performance")
+
+        plt.tight_layout()
+
+    def _plot_results(self, portfolio_returns_list, weights=None):
+        if weights is not None:
+            plt.figure(figsize=(16, 4))
+            for i, ticker in enumerate(self.ticker_symbols):
+                plt.plot(weights[:,i], 'o', label=ticker)
+            plt.xlabel("Day")
+            plt.ylabel("Weight")
+            plt.legend()
+            plt.title("Portfolio Weights")
+
         plt.figure(figsize=(16, 4))
         if self.method == "regression":
             plt.suptitle(f"LSTM Regression + Markowitz Mean-Variance Model (Risk Tolerance = {self.risk_tolerance})")
@@ -423,6 +571,12 @@ class PortfolioOptimizer:
 
         elif self.method == "equal":
             plt.suptitle("Equal Portfolio Allocation")
+        
+        elif self.method == "cheat classification":
+            plt.suptitle("Cheat Classification Model")
+
+        elif self.method == "cheat regression":
+            plt.suptitle("Cheat Regression Model")
 
         ax1 = plt.subplot(1, 2, 1)
         portfolio_return_percentages = 100 * portfolio_returns_list
