@@ -6,4 +6,4 @@
 
 ## Using the prototype
 * The prototype is available at http://cse881-stockopt.eastus.cloudapp.azure.com:8000/
-* In case the link above doesn't load, the Azure VM might be down, in which case the way to run the prototype would be `cd`-ing into the main directory in this repository and running the `frontend.py` file. The link (http://127.0.0.1:80) show up in the terminal.
+* In case the link above doesn't load, the Azure VM might be down, in which case the way to run the prototype would be `cd`-ing into the main directory in this repository and running the `frontend.py` file. The link (http://127.0.0.1:80) will show up in the terminal.
